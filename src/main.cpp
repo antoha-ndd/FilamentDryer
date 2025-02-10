@@ -13,6 +13,10 @@ void EncoderPress(TEncoder *Encoder);
 void OnLeft(TEncoder *Encoder);
 void OnRight(TEncoder *Encoder);
 
+
+int StateT = 0;
+int StateH = 0;
+
 typedef struct Settings
 {
   int Hum;
@@ -43,6 +47,7 @@ public:
       Settings.Hum = 1;
 
     dht = new Tdht22(7);
+    delay(1000);
     dht->Register(this);
 
     Screen = new Tssd1306();
@@ -59,7 +64,9 @@ public:
     Encoder->OnPress = EncoderPress;
     Encoder->OnRight = OnRight;
     Encoder->OnLeft = OnLeft;
-
+    Encoder->setDirection(false);
+    Encoder->tick();
+    Encoder->resetStates();
     Encoder->Register(this);
 
     EditMode = new TBool();
@@ -76,10 +83,10 @@ public:
     DestHumidity->SetValue(Settings.Hum);
 
     pinMode(9,OUTPUT);
-    digitalWrite(9,0);
+    digitalWrite(9,1);
 
-    Serial.println("DEST TEMP : " + String(Settings.Temp));
-    Serial.println("DEST HUM : " + String(Settings.Hum));
+    //Serial.println("DEST TEMP : " + String(Settings.Temp));
+    //Serial.println("DEST HUM : " + String(Settings.Hum));
   };
 };
 
@@ -111,6 +118,20 @@ void DrawMenu()
       App->Screen->setCursor(89, 14);
       App->Screen->print("ON");
     }
+
+    if(StateH<0){
+      App->Screen->setTextSize(1);
+      App->Screen->setCursor(0, 21);
+      App->Screen->print("!");
+    }
+    if(StateT<0){
+      App->Screen->setTextSize(1);
+      App->Screen->setCursor(0, 5);
+      App->Screen->print("!");
+    }
+
+
+
     App->Screen->display();
 
     Mark++;
@@ -148,6 +169,7 @@ void DrawMenu()
 void EncoderPress(TEncoder *Encoder)
 {
 
+
   if (App->EditMode->GetValue())
   {
 
@@ -177,7 +199,8 @@ void EncoderPress(TEncoder *Encoder)
   DrawMenu();
 }
 
-void OnRight(TEncoder *Encoder)
+
+void OnLeft(TEncoder *Encoder)
 {
 
   if (App->EditMode->GetValue())
@@ -202,7 +225,7 @@ void OnRight(TEncoder *Encoder)
 
 
 
-void OnLeft(TEncoder *Encoder)
+void OnRight(TEncoder *Encoder)
 {
   if (App->EditMode->GetValue())
   {
@@ -210,7 +233,7 @@ void OnLeft(TEncoder *Encoder)
     if (App->EditValue->GetValue() == 1)
     {
 
-      if (App->DestTemp->GetValue() < 60)
+      if (App->DestTemp->GetValue() < 65)
         App->DestTemp->SetValue(App->DestTemp->GetValue() + 1);
     }
     else if (App->EditValue->GetValue() == 2)
@@ -226,27 +249,44 @@ void OnLeft(TEncoder *Encoder)
 
 void CheckHeat(){
 
-  bool State = (App->dht->Temperature()<App->Settings.Temp) || (App->dht->Humidity() > App->Settings.Hum);
-  App->HeaterOn->SetValue(State);
-  digitalWrite(9,!State);
+  float H = App->dht->Humidity(), Hs = App->Settings.Hum;
+  
+  StateH = 0;
+  StateT = 0;
+
+  if( H < Hs ) StateH = -2;
+  if( H > (Hs + 1)) StateH = 1;
+
+  float T = App->dht->Temperature(), Ts = App->Settings.Temp;
+
+  if( T > Ts ) StateT = -2;
+  if( T < (Ts - 1)) StateT = 1;
+  
+  int State = StateH + StateT;
+
+  if(State>0){
+    App->HeaterOn->SetValue(true);
+    digitalWrite(9,false);
+  }
+  else if(State<0){
+    App->HeaterOn->SetValue(false);
+    digitalWrite(9,true);
+ }
+//Serial.println(" H="+String(H) + " Hs="+String(Hs)+" Sh="+String(StateH));
+//Serial.println(" T="+String(T) + " Ts="+String(Ts)+" ST="+String(StateT));
+//Serial.println(" STATE="+String(State));
+//Serial.println();
+  
 
 }
 
 void Timer1_OnTimeout(TTimer *Timer)
 {
 
-  float T, H;
-
   App->dht->UpdateValues();
-  T = App->dht->Temperature();
-  H = App->dht->Humidity();
-
   CheckHeat();
-
   DrawMenu();
 
-  Serial.println("T = " + String(T));
-  Serial.println("H = " + String(H));
 };
 
 unsigned long int TimerSource()
@@ -258,12 +298,12 @@ void setup()
 {
 
   GetTimerValue = TimerSource;
-  Serial.begin(9600);
+//  Serial.begin(9600);
 
   App = new TApp();
   App->Run();
 
-  Serial.println("App started!");
+  //Serial.println("App started!");
 }
 
 void loop()
